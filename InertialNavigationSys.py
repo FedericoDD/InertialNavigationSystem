@@ -25,6 +25,7 @@ bno.enable_feature(BNO_REPORT_ROTATION_VECTOR)
 ## --------------------------------------
 ##  G N S S   C O N F I G U R A T I O N
 ## --------------------------------------
+import adafruit_gps
 
 # Create a serial connection for the GPS connection using default speed and
 # a slightly higher timeout (GPS modules typically update once a second).
