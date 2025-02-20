@@ -175,9 +175,9 @@ def Position_EKF(dt, position, velocity,acc_meas, R_BODY2ENU, x_k_1, P_k_1, sigm
     # R_BODY2ENU: 3 by 3, rotation matrix from body frame to ENU frame
     # x_k: 6 by 1, state vector
     # P_k: 6 by 6, covariance matrix
-    # sigma_acc: 3 by 1, standard deviation of accelerometer
-    # hdop: horizontal dilution of precision
-    # vdot: vertical dilution of precision
+    # sigma_acc: 1 by 1, standard deviation of accelerometer
+    # hdop: 1 by 1, horizontal dilution of precision
+    # vdot: 1 by 1, vertical dilution of precision
 
 
     # Q: 6 by 6, process noise covariance matrix diag(sigma_acc)^2
