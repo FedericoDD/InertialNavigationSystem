@@ -164,6 +164,26 @@ def Attitude_MEKF(dt, acc_meas, gyro_meas, mag_meas, R_BODY2ENU,x_k, P_k):
 
     pass
 
+def Quaternion2Rotation(q):
+    # q: 4 by 1, quaternion
+    # R: 3 by 3, rotation matrix from body to ENU
+    q1, q2, q3, q4 = q
+    q12=q1**2
+    q22=q2**2
+    q32=q3**2
+    q42=q4**2
+    '''
+    R = np.array([[q12 - q22 - q32 + q42, 2*(q1*q2 + q3*q4), 2*(q1*q3 - q2*q4)],
+                [2*(q1*q2 - q3*q4), -q12 + q22 - q32 + q42, 2*(q2*q3 + q1*q4)],
+                [2*(q1*q3 + q2*q4), 2*(q2*q3 - q1*q4), -q12 - q22 + q32 + q42]])
+    R = np.transpose(R)
+    '''
+    R = np.array([[q12 - q22 - q32 + q42, 2*(q1*q2 - q3*q4), 2*(q1*q3 + q2*q4)],
+                [2*(q1*q2 + q3*q4), -q12 + q22 - q32 + q42, 2*(q2*q3 - q1*q4)],
+                [2*(q1*q3 - q2*q4), 2*(q2*q3 + q1*q4), -q12 - q22 + q32 + q42]])
+
+    return R
+
 ## --------------------------------------
 ##  E K F   A L G O R I T H M
 ## --------------------------------------
@@ -171,7 +191,7 @@ def Position_EKF(dt, position, velocity,acc_meas, R_BODY2ENU, x_k_1, P_k_1, sigm
     # dt: time interval (use gnss time)
     # position: 3 by 1, East, North, Up from GPS
     # velocity: 3 by 1, East, North, Up from GPS
-    # acc_meas: 3 by 1, Body frame
+    # acc_meas: 3 by 1, Body frame with gravity
     # R_BODY2ENU: 3 by 3, rotation matrix from body frame to ENU frame
     # x_k: 6 by 1, state vector
     # P_k: 6 by 6, covariance matrix
@@ -184,7 +204,7 @@ def Position_EKF(dt, position, velocity,acc_meas, R_BODY2ENU, x_k_1, P_k_1, sigm
     # R: 6 by 6, measurement noise covariance matrix diag(hdop^2, hdop^2, vdot^2,2*hdop^2/dt, 2*hdop^2/dt^2, 2*vdot^2/dt^2)
 
 
-    acc_meas = np.dot(R_BODY2ENU, acc_meas)
+    acc_meas = np.dot(R_BODY2ENU, acc_meas) + np.array([0, 0, 9.805])
     measurements = np.concatenate((position, velocity), axis=0)
     
     x_k = np.zeros(6)
@@ -202,7 +222,7 @@ def Position_EKF(dt, position, velocity,acc_meas, R_BODY2ENU, x_k_1, P_k_1, sigm
                 [0, dt, 0],
                 [0, 0, dt]])
     
-    Q= np.diag([sigma_acc**2, sigma_acc**2, sigma_acc**2]) # 0.1 is the standard deviation of the velocity
+    Q = np.diag([sigma_acc**2, sigma_acc**2, sigma_acc**2]) 
     R = np.diag([hdop**2, hdop**2, vdot**2, 0.1**2, 0.1**2, 0.1**2]) # 0.1 is the standard deviation of the velocity
     V = np.dot(np.dot(B, Q), np.transpose(B))
 
@@ -221,10 +241,16 @@ def Position_EKF(dt, position, velocity,acc_meas, R_BODY2ENU, x_k_1, P_k_1, sigm
 R_BODY2ENU = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
 origin_ECEF = np.array([[0], [0], [0]])
 gps_time_old = gps.timestamp_utc
-P_k= 1e-9*np.eye(6)
-Q = np.eye(6)
-R = np.eye(6)
 
+latitude = gps.latitude
+longitude = gps.longitude
+altitude = gps.altitude_m + gps.height_geoid # height above ellipsoid = orthometric height + geoid separation
+velocity = gps.speed_kmh / 3.6 # km/h to m/s
+position_ENU = GPS2ENU(latitude, longitude, altitude, origin_ECEF)
+sigma_acc = 0.3
+x_k = np.concatenate((position_ENU, velocity), axis=0)
+P_k= 1e-9*np.eye(6)
+q_k = np.array([0, 0, 0, 1])
 
 f = open('data.txt', 'w')
 f.write('Time;Latitude;Longitude;Altitude;')
@@ -234,6 +260,8 @@ f.write('Accel_X;Accel_Y;Accel_Z;')
 f.write('Gyro_X;Gyro_Y;Gyro_Z;')
 f.write('Mag_X;Mag_Y;Mag_Z;')
 f.write('Position_E;Position_N;Position_U;')
+f.write('Position_EKF_E;Position_EKF_N;Position_EKF_U;')
+f.write('Velocity_EKF_E;Velocity_EKF_N;Velocity_EKF_U')
 f.write('\n')
 f.close()
 
@@ -315,7 +343,8 @@ while True:
             dt += 60
         print("Time interval: ", dt)
         gps_time_old = gps.timestamp_utc.tm_sec
-    
+
+        
     ## --------------------------------------
     ##  R E A D   I M U
     ## --------------------------------------
@@ -333,7 +362,15 @@ while True:
     mag_x, mag_y, mag_z = bno.magnetic  # pylint:disable=no-member
     print("X: %0.6f  Y: %0.6f Z: %0.6f uT" % (mag_x, mag_y, mag_z))
     print("")
+    
+    ## --------------------------------------
+    ##   TO DO:
+    # q_k, Pq_k = Attitude_MEKF(dt, np.array([accel_x,accel_y,accel_z]), np.array([gyro_x,gyro_y,gyro_z]), np.array([mag_x,mag_y,mag_z]), R_BODY2ENU, q_k, Pq_k)
+    # R_BODY2ENU = Quaternion2Rotation(q_k)
+    ## --------------------------------------
 
+    x_k, P_k = Position_EKF(dt, position_ENU, velocity, np.array([accel_x,accel_y,accel_z]) , R_BODY2ENU, x_k, P_k, sigma_acc, gps.hdop, gps.vdop)
+    
     f = open('data.txt', 'a')
     f.write(str(gps_time_old)+';')
     f.write(str(latitude)+';')
@@ -355,6 +392,12 @@ while True:
     f.write(str(mag_z)+';')
     f.write(str(position_ENU[0])+';')
     f.write(str(position_ENU[1])+';')
-    f.write(str(position_ENU[2]))
+    f.write(str(position_ENU[2])+';')
+    f.write(str(x_k[0])+';')
+    f.write(str(x_k[1])+';')
+    f.write(str(x_k[2])+';')
+    f.write(str(x_k[3])+';')
+    f.write(str(x_k[4])+';')
+    f.write(str(x_k[5]))
     f.write('\n')
     f.close()
