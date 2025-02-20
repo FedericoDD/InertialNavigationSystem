@@ -1,7 +1,7 @@
 import time
 import board
 import busio
-
+from ulab import numpy as np
 ## --------------------------------------
 ##  I M U   C O N F I G U R A T I O N
 ## --------------------------------------
@@ -73,6 +73,83 @@ gps.send_command(b"PMTK220,1000")
 
 # Main loop runs forever printing the location, etc. every second.
 last_print = time.monotonic()
+
+## --------------------------------------
+##  G N S S   CHANGE REFERENCE FRAME
+## --------------------------------------
+
+#def GPS2ECEF(latitude, longitude, altitude, flag_R_ECEF2ENU, ellipsoid):
+def GPS2ECEF(*argv):
+    # latitude in decimal degree, [-90, +90]
+    # longitude in decimal degree, [-180, +180]
+    # geodetic altitude in meter, obtained by GPS
+
+    # flag_R_ECEF2ENU = 0 or 1, default is 0
+    # if flag = 1, this point is the origin of ENU, calculate the rotation matrix from the ECEF frame to the local ENU frame
+    # if flag = 0, output a 3 by 3 Identity matrix, won't use it
+
+    # ellipsoid = (a, rf), a is semi-major axis [meter], rf is reciprocal flattening (1/f)
+    # default: WGS84 = 6378137, 298.257223563
+    
+    latitude_radian = argv[0]*np.pi/180   # degree to radian
+    longitude_radian = argv[1]*np.pi/180  # degree to radian
+    altitude = argv[2]                   # meter
+
+    # calculate some values in advanced
+    sin_lat = np.sin(latitude_radian)
+    cos_lat = np.cos(latitude_radian)
+    sin_lon = np.sin(longitude_radian)
+    cos_lon = np.cos(longitude_radian)
+
+    if len(argv) > 3:
+        '''
+        R_ECEF2NED = np.array([\
+            [-sin_lat*cos_lon, -sin_lat*sin_lon, cos_lat], \
+            [-sin_lon, cos_lon, 0.0], \
+            [-cos_lat*cos_lon, -cos_lat*sin_lon, -sin_lat]])
+        '''
+        R_ECEF2ENU = np.array([\
+            [-sin_lon, cos_lon, 0.0], \
+            [-sin_lat*cos_lon, -sin_lat*sin_lon, cos_lat], \
+            [cos_lat*cos_lon, cos_lat*sin_lon, sin_lat]])
+        
+    else:
+        R_ECEF2ENU = np.eye(3)
+
+    if len(argv) > 4:
+        a, rf = argv[4]
+    else:
+        a, rf = 6378137, 298.257223563
+    
+    e2 = 1 - (1 - 1 / rf) ** 2           # squared eccentricity
+    n = a / np.sqrt(1 - e2 * sin_lat ** 2)  # prime vertical radius
+    r = (n + altitude) * cos_lat         # perpendicular distance in z axis
+    x = r * cos_lon
+    y = r * sin_lon
+    z = (n * (1 - e2) + altitude) * sin_lat
+    # ECEF coordinates for GPS
+    # 3 by 1
+    point_ECEF = np.array([[x], [y], [z]])
+    return point_ECEF, R_ECEF2ENU
+
+
+def ECEF2ENU(origin_ECEF, point_ECEF, R_ECEF2ENU):
+    # ENU coordinates, the origin is defined by yourself
+    # 3 by 1, North, East, Down
+    position_ENU = np.dot(R_ECEF2ENU, (point_ECEF - origin_ECEF))
+    return position_ENU
+
+
+def GPS2ENU(latitude, longitude, altitude, origin_ECEF):
+    # latitude in decimal degree, [-90, +90]
+    # longitude in decimal degree, [-180, +180]
+    # altitude in meter, obtained by GPS
+    # origin_ECEF is the origin of ENU in ECEF frame
+
+    point_ECEF, R_ECEF2ENU = GPS2ECEF(latitude, longitude, altitude)
+    position_ENU = ECEF2ENU(origin_ECEF, point_ECEF, R_ECEF2ENU)
+    # 3 by 1, North, East, Down
+    return position_ENU
 
 ## --------------------------------------
 ##  M E K F   A L G O R I T H M
@@ -148,6 +225,16 @@ while True:
             print("Horizontal dilution: {}".format(gps.horizontal_dilution))
         if gps.height_geoid is not None:
             print("Height geoid: {} meters".format(gps.height_geoid))
+
+        ## --------------------------------------
+        ## F R O M  G P S   T O   E N U
+        ## --------------------------------------
+        latitude = gps.latitude
+        longitude = gps.longitude
+        altitude = gps.altitude_m + gps.height_geoid # height above ellipsoid = orthometric height + geoid separation
+        origin_ECEF = np.array([[0], [0], [0]])
+        position_ENU = GPS2ENU(latitude, longitude, altitude, origin_ECEF)
+        print("Position in ENU: ", position_ENU)
     
     ## --------------------------------------
     ##  R E A D   I M U
