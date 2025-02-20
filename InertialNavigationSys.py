@@ -129,7 +129,7 @@ def GPS2ECEF(*argv):
     z = (n * (1 - e2) + altitude) * sin_lat
     # ECEF coordinates for GPS
     # 3 by 1
-    point_ECEF = np.array([[x], [y], [z]])
+    point_ECEF = np.array([x, y, z])
     return point_ECEF, R_ECEF2ENU
 
 
@@ -154,14 +154,88 @@ def GPS2ENU(latitude, longitude, altitude, origin_ECEF):
 ## --------------------------------------
 ##  M E K F   A L G O R I T H M
 ## --------------------------------------
-def Attitude_MEKF():
+def Attitude_MEKF(dt, acc_meas, gyro_meas, mag_meas, R_BODY2ENU,x_k, P_k):
+    # dt: time interval (use gnss time)
+    # acc_meas: 3 by 1, Body frame
+    # gyro_meas: 3 by 1, Body frame
+    # mag_meas: 3 by 1, Body frame
+    # R_BODY2ENU: 3 by 3, rotation matrix from body frame to ENU frame
+
+
     pass
 
 ## --------------------------------------
 ##  E K F   A L G O R I T H M
 ## --------------------------------------
-def Position_EKF():
-    pass
+def Position_EKF(dt, position, velocity,acc_meas, R_BODY2ENU, x_k_1, P_k_1, sigma_acc, hdop, vdot):
+    # dt: time interval (use gnss time)
+    # position: 3 by 1, East, North, Up from GPS
+    # velocity: 3 by 1, East, North, Up from GPS
+    # acc_meas: 3 by 1, Body frame
+    # R_BODY2ENU: 3 by 3, rotation matrix from body frame to ENU frame
+    # x_k: 6 by 1, state vector
+    # P_k: 6 by 6, covariance matrix
+    # sigma_acc: 3 by 1, standard deviation of accelerometer
+    # hdop: horizontal dilution of precision
+    # vdot: vertical dilution of precision
+
+
+    # Q: 6 by 6, process noise covariance matrix diag(sigma_acc)^2
+    # R: 6 by 6, measurement noise covariance matrix diag(hdop^2, hdop^2, vdot^2,2*hdop^2/dt, 2*hdop^2/dt^2, 2*vdot^2/dt^2)
+
+
+    acc_meas = np.dot(R_BODY2ENU, acc_meas)
+    measurements = np.concatenate((position, velocity), axis=0)
+    
+    x_k = np.zeros(6)
+    F = np.array([[1, 0, 0, dt, 0, 0],
+                [0, 1, 0, 0, dt, 0],
+                [0, 0, 1, 0, 0, dt],
+                [0, 0, 0, 1, 0, 0],
+                [0, 0, 0, 0, 1, 0], 
+                [0, 0, 0, 0, 0, 1]])
+    dt2_2 = 0.5*dt*dt
+    B = np.array([[dt2_2, 0, 0],
+                [0, dt2_2, 0],
+                [0, 0, dt2_2],
+                [dt, 0, 0],
+                [0, dt, 0],
+                [0, 0, dt]])
+    
+    Q= np.diag([sigma_acc**2, sigma_acc**2, sigma_acc**2]) # 0.1 is the standard deviation of the velocity
+    R = np.diag([hdop**2, hdop**2, vdot**2, 0.1**2, 0.1**2, 0.1**2]) # 0.1 is the standard deviation of the velocity
+    V = np.dot(np.dot(B, Q), np.transpose(B))
+
+    ## Prediction
+    x_k = np.dot(F, x_k_1) + np.dot(B, acc_meas)
+    P_k = np.dot(np.dot(F, P_k_1), np.transpose(F)) + V
+
+    ## Update
+    H = np.eye(6)
+    K = np.dot(np.dot(P_k, np.transpose(H)), np.linalg.inv(np.dot(np.dot(H, P_k), np.transpose(H)) + R))
+    x_k = x_k + np.dot(K, (measurements - np.dot(H, x_k)))
+    P_k = np.dot((np.eye(6) - np.dot(K, H)), P_k)
+
+    return x_k, P_k
+
+R_BODY2ENU = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+origin_ECEF = np.array([[0], [0], [0]])
+gps_time_old = gps.timestamp_utc
+P_k= 1e-9*np.eye(6)
+Q = np.eye(6)
+R = np.eye(6)
+
+
+f = open('data.txt', 'w')
+f.write('Time;Latitude;Longitude;Altitude;')
+f.write('Velocity_X;Velocity_Y;Velocity_Z;')
+f.write('HDilution;VDilution;')
+f.write('Accel_X;Accel_Y;Accel_Z;')
+f.write('Gyro_X;Gyro_Y;Gyro_Z;')
+f.write('Mag_X;Mag_Y;Mag_Z;')
+f.write('Position_E;Position_N;Position_U;')
+f.write('\n')
+f.close()
 
 while True:
 
@@ -232,9 +306,15 @@ while True:
         latitude = gps.latitude
         longitude = gps.longitude
         altitude = gps.altitude_m + gps.height_geoid # height above ellipsoid = orthometric height + geoid separation
-        origin_ECEF = np.array([[0], [0], [0]])
+        velocity = gps.speed_kmh / 3.6 # km/h to m/s
         position_ENU = GPS2ENU(latitude, longitude, altitude, origin_ECEF)
         print("Position in ENU: ", position_ENU)
+
+        dt = gps.timestamp_utc.tm_sec - gps_time_old
+        if dt < 0:
+            dt += 60
+        print("Time interval: ", dt)
+        gps_time_old = gps.timestamp_utc.tm_sec
     
     ## --------------------------------------
     ##  R E A D   I M U
@@ -253,3 +333,28 @@ while True:
     mag_x, mag_y, mag_z = bno.magnetic  # pylint:disable=no-member
     print("X: %0.6f  Y: %0.6f Z: %0.6f uT" % (mag_x, mag_y, mag_z))
     print("")
+
+    f = open('data.txt', 'a')
+    f.write(str(gps_time_old)+';')
+    f.write(str(latitude)+';')
+    f.write(str(longitude)+';')
+    f.write(str(altitude)+';')
+    f.write(str(velocity[0])+';')
+    f.write(str(velocity[1])+';')
+    f.write(str(velocity[2])+';')
+    f.write(str(gps.hdop)+';')
+    f.write(str(gps.vdop)+';')
+    f.write(str(accel_x)+';')
+    f.write(str(accel_y)+';')
+    f.write(str(accel_z)+';')
+    f.write(str(gyro_x)+';')
+    f.write(str(gyro_y)+';')
+    f.write(str(gyro_z)+';')
+    f.write(str(mag_x)+';')
+    f.write(str(mag_y)+';')
+    f.write(str(mag_z)+';')
+    f.write(str(position_ENU[0])+';')
+    f.write(str(position_ENU[1])+';')
+    f.write(str(position_ENU[2]))
+    f.write('\n')
+    f.close()
