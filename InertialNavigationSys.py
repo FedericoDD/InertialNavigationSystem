@@ -154,15 +154,113 @@ def GPS2ENU(latitude, longitude, altitude, origin_ECEF):
 ## --------------------------------------
 ##  M E K F   A L G O R I T H M
 ## --------------------------------------
-def Attitude_MEKF(dt, acc_meas, gyro_meas, mag_meas, R_BODY2ENU,x_k, P_k):
+def skew_symmetric(v):
+    """ Returns the skew-symmetric matrix of a vector """
+    return np.array([[0, -v[2], v[1]],
+            [v[2], 0, -v[0]],
+            [-v[1], v[0], 0]])
+
+def Attitude_MEKF(dt, acc_meas, gyro_meas, mag_meas, sigma_acc, sigma_ARW, sigma_RRW, sigma_mag ,x_k_1, P_k_1):
     # dt: time interval (use gnss time)
     # acc_meas: 3 by 1, Body frame
     # gyro_meas: 3 by 1, Body frame
     # mag_meas: 3 by 1, Body frame
     # R_BODY2ENU: 3 by 3, rotation matrix from body frame to ENU frame
+    # x_k_1: 18 by 1, 
+        # [0:4] quaternion
+        # [4:7] gyro bias
+        # [7:12] delta X
+    # P_k_1: 18 by 18, covariance matrix
 
+    I3 = np.eye(3)
+    I4 = np.eye(4)
+    I6 = np.eye(6)
+    O3 = np.zeros((3,3))
 
-    pass
+    # Propagated value from previous step
+    q_k = x_k_1[0:4]
+    beta_k = x_k_1[4:7]
+    delta_x_k = x_k_1[7:12]
+    x_k = np.zeros(12)
+
+    # Predition
+    # Depolarize bias from gyroscope
+    omega_k = gyro_meas - beta_k
+
+    # Quaternion propagation
+    omegax_k = skew_symmetric(omega_k)
+    Omega_k = np.block([[- omegax_k, omega_k], [-omega_k.transpose(), 0]])
+    q_k = np.dot(I4 + 0.5*dt*Omega_k, q_k)
+    q_k = q_k/np.linalg.norm(q_k)
+
+    # Covariance equation propagation
+    F = np.block([[I3, -I3*dt], [O3, I3]])
+    G = np.block([[-I3, O3], [O3, I3]])
+    Q = np.array([[(sigma_ARW**2*dt + 1/3 * sigma_RRW**2*dt**3)*I3, -(0.5*sigma_RRW**2*dt**2)*I3],
+                  [-0.5*sigma_RRW**2*dt**2*I3, sigma_RRW**2*dt*I3]])
+    P_k = np.dot(np.dot(F, P_k_1), F.transpose()) + np.dot(np.dot(G, Q), G.transpose())
+
+    # Update
+    A_k = Quaternion2Rotation(q_k)
+
+    # Measurement model
+    for i in range(3):
+        
+        if i == 1:
+            r_acc = np.array([0,0,-1])
+
+            # Normalized accelerometer measurement
+            b = acc_meas/np.linalg.norm(acc_meas)
+            Aq_r = np.dot(A_k, r_acc)
+            R = sigma_acc**2 * I3
+        else:
+            b = mag_meas/np.linalg.norm(mag_meas)
+            h = np.dot(A_k.transpose(), mag_meas)
+            r_mag = np.array([np.sqrt(h[0]**2 + h[1]**2), 0, h[2]])
+            Aq_r = np.dot(A_k, r_mag)
+            R = sigma_mag**2 * I3
+
+        # Sensitivity matrix
+        Aq_rx = skew_symmetric(Aq_r)
+        H = np.block([Aq_rx, O3])
+
+        # Kalman gain
+        K = np.dot(np.dot(P_k, H.transpose()), np.linalg.inv(np.dot(np.dot(H, P_k), H.transpose()) + R))
+
+        # Update covariance
+        P_k = np.dot(np.dot((I6 - np.dot(K, H)), P_k), (I6 - np.dot(K, H)).transpose()) + np.dot(np.dot(K, R), K.transpose())
+
+        # Update state
+        e_k = b - Aq_r
+        y_k = e_k - np.dot(H, delta_x_k)
+        delta_x_k = delta_x_k + np.dot(K, y_k)
+
+        # Update quaternion
+        drho = 0.5*delta_x_k[0:3]
+        q_4 = np.sqrt(1 - np.dot(drho, drho))
+        d_q = np.concatenate((drho, q_4))
+        x_k[0:4] = QuaternionProduct(d_q)
+
+        # Update gyro bias
+        delta_beta = delta_x_k[3:6]
+        x_k[4:7] = beta_k + delta_beta
+
+        # Update delta X
+        x_k[7:12] = delta_x_k
+    
+    return x_k, P_k
+
+def QuaternionProduct(q1_v, q2_v):
+    # q1, q2: 4 by 1, quaternion
+    # q: 4 by 1, quaternion
+    q1, q2, q3, q4 = q2_v
+    Q = np.array([[q4, -q3, -q2, q1],
+                  [-q3, q4, q1, q2],
+                [q2, -q1, q4, q3],
+                [-q1, -q2, -q3, q4]])
+    q = np.dot(Q, q1_v)
+    q = q/np.linalg.norm(q)
+    return q
 
 def Quaternion2Rotation(q):
     # q: 4 by 1, quaternion
@@ -248,8 +346,16 @@ altitude = gps.altitude_m + gps.height_geoid # height above ellipsoid = orthomet
 velocity = gps.speed_kmh / 3.6 # km/h to m/s
 position_ENU = GPS2ENU(latitude, longitude, altitude, origin_ECEF)
 sigma_acc = 0.3
+sigma_ARW = 2 * np.pi/180
+sigma_RRW = 3.1 * np.pi/180
+sigma_mag = 1.4e-6
+
+# EKF initialization
 x_k = np.concatenate((position_ENU, velocity), axis=0)
 P_k= 1e-9*np.eye(6)
+
+# MEKF initialization
+Pq_k = 1e-9*np.eye(6)
 q_k = np.array([0, 0, 0, 1])
 
 f = open('data.txt', 'w')
@@ -262,6 +368,7 @@ f.write('Mag_X;Mag_Y;Mag_Z;')
 f.write('Position_E;Position_N;Position_U;')
 f.write('Position_EKF_E;Position_EKF_N;Position_EKF_U;')
 f.write('Velocity_EKF_E;Velocity_EKF_N;Velocity_EKF_U')
+f.write('q1;q2;q3;q4')
 f.write('\n')
 f.close()
 
@@ -338,11 +445,11 @@ while True:
         position_ENU = GPS2ENU(latitude, longitude, altitude, origin_ECEF)
         print("Position in ENU: ", position_ENU)
 
-        dt = gps.timestamp_utc.tm_sec - gps_time_old
-        if dt < 0:
-            dt += 60
-        print("Time interval: ", dt)
-        gps_time_old = gps.timestamp_utc.tm_sec
+    dt = gps.timestamp_utc.tm_sec - gps_time_old
+    if dt < 0:
+        dt += 60
+    print("Time interval: ", dt)
+    gps_time_old = gps.timestamp_utc.tm_sec
 
         
     ## --------------------------------------
@@ -363,11 +470,9 @@ while True:
     print("X: %0.6f  Y: %0.6f Z: %0.6f uT" % (mag_x, mag_y, mag_z))
     print("")
     
-    ## --------------------------------------
-    ##   TO DO:
-    # q_k, Pq_k = Attitude_MEKF(dt, np.array([accel_x,accel_y,accel_z]), np.array([gyro_x,gyro_y,gyro_z]), np.array([mag_x,mag_y,mag_z]), R_BODY2ENU, q_k, Pq_k)
+    q_k, Pq_k = Attitude_MEKF(dt, np.array([accel_x,accel_y,accel_z]), np.array([gyro_x,gyro_y,gyro_z]), np.array([mag_x,mag_y,mag_z]), sigma_acc, sigma_ARW, sigma_RRW, sigma_mag ,q_k, Pq_k)
+    
     # R_BODY2ENU = Quaternion2Rotation(q_k)
-    ## --------------------------------------
 
     x_k, P_k = Position_EKF(dt, position_ENU, velocity, np.array([accel_x,accel_y,accel_z]) , R_BODY2ENU, x_k, P_k, sigma_acc, gps.hdop, gps.vdop)
     
@@ -398,6 +503,10 @@ while True:
     f.write(str(x_k[2])+';')
     f.write(str(x_k[3])+';')
     f.write(str(x_k[4])+';')
-    f.write(str(x_k[5]))
+    f.write(str(x_k[5])+';')
+    f.write(str(q_k[0])+';')
+    f.write(str(q_k[1])+';')
+    f.write(str(q_k[2])+';')
+    f.write(str(q_k[3])+';')
     f.write('\n')
     f.close()
