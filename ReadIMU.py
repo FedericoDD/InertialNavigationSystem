@@ -4,16 +4,20 @@
 import time
 import board
 import busio
+import adafruit_bno08x
+from adafruit_bno08x.uart import BNO08X_UART
 from adafruit_bno08x import (
     BNO_REPORT_ACCELEROMETER,
     BNO_REPORT_GYROSCOPE,
     BNO_REPORT_MAGNETOMETER,
     BNO_REPORT_ROTATION_VECTOR,
 )
-from adafruit_bno08x.i2c import BNO08X_I2C
 
-i2c = busio.I2C(board.SCL, board.SDA, frequency=400000)
-bno = BNO08X_I2C(i2c)
+
+uart = busio.UART(board.IO17, board.IO18, baudrate=3000000, receiver_buffer_size=2048)
+
+bno = BNO08X_UART(uart)
+
 
 bno.enable_feature(BNO_REPORT_ACCELEROMETER)
 bno.enable_feature(BNO_REPORT_GYROSCOPE)

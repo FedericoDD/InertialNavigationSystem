@@ -2,25 +2,62 @@ import time
 import board
 import busio
 from ulab import numpy as np
+
+## --------------------------------------
+##  S E N S O R   N O I S E   P A R A M E T E R S
+## --------------------------------------
+sigma_acc = 0.3
+sigma_ARW = 0.66 * np.pi / 180 / 3600 # rad/sqrt(s)
+sigma_RRW = 5 * np.pi / 180 / 3600 # rad/s
+sigma_mag = 1.4e-6
+sigma_acc = 1
+sigma_ARW = 1 # rad/sqrt(s)
+sigma_RRW = 1 # rad/s
+sigma_mag = 1
 ## --------------------------------------
 ##  I M U   C O N F I G U R A T I O N
 ## --------------------------------------
-
+import adafruit_bno08x
+from adafruit_bno08x.uart import BNO08X_UART
 from adafruit_bno08x import (
     BNO_REPORT_ACCELEROMETER,
     BNO_REPORT_GYROSCOPE,
     BNO_REPORT_MAGNETOMETER,
     BNO_REPORT_ROTATION_VECTOR,
 )
-from adafruit_bno08x.i2c import BNO08X_I2C
 
-i2c = busio.I2C(board.SCL, board.SDA, frequency=400000)
-bno = BNO08X_I2C(i2c)
+
+uart = busio.UART(board.IO17, board.IO18, baudrate=3000000, receiver_buffer_size=2048)
+
+bno = BNO08X_UART(uart)
+
 
 bno.enable_feature(BNO_REPORT_ACCELEROMETER)
 bno.enable_feature(BNO_REPORT_GYROSCOPE)
 bno.enable_feature(BNO_REPORT_MAGNETOMETER)
 bno.enable_feature(BNO_REPORT_ROTATION_VECTOR)
+
+time.sleep(0.5)
+
+print("Acceleration:")
+accel_x, accel_y, accel_z = bno.acceleration  # pylint:disable=no-member
+print("X: %0.6f  Y: %0.6f Z: %0.6f  m/s^2" % (accel_x, accel_y, accel_z))
+print("")
+print("Gyro:")
+gyro_x, gyro_y, gyro_z = bno.gyro  # pylint:disable=no-member
+print("X: %0.6f  Y: %0.6f Z: %0.6f rads/s" % (gyro_x, gyro_y, gyro_z))
+print("")
+print("Magnetometer:")
+mag_x, mag_y, mag_z = bno.magnetic  # pylint:disable=no-member
+print("X: %0.6f  Y: %0.6f Z: %0.6f uT" % (mag_x, mag_y, mag_z))
+print("")
+print("Rotation Vector Quaternion:")
+quat_i, quat_j, quat_k, quat_real = bno.quaternion  # pylint:disable=no-member
+print(
+    "I: %0.6f  J: %0.6f K: %0.6f  Real: %0.6f" % (quat_i, quat_j, quat_k, quat_real)
+)
+print("")
+
 
 ## --------------------------------------
 ##  G N S S   C O N F I G U R A T I O N
@@ -147,6 +184,7 @@ def GPS2ENU(latitude, longitude, altitude, origin_ECEF):
     # origin_ECEF is the origin of ENU in ECEF frame
 
     point_ECEF, R_ECEF2ENU = GPS2ECEF(latitude, longitude, altitude)
+    
     position_ENU = ECEF2ENU(origin_ECEF, point_ECEF, R_ECEF2ENU)
     # 3 by 1, North, East, Down
     return position_ENU
@@ -166,12 +204,13 @@ def Attitude_MEKF(dt, acc_meas, gyro_meas, mag_meas, sigma_acc, sigma_ARW, sigma
     # gyro_meas: 3 by 1, Body frame
     # mag_meas: 3 by 1, Body frame
     # R_BODY2ENU: 3 by 3, rotation matrix from body frame to ENU frame
-    # x_k_1: 18 by 1, 
+    # x_k_1: 14 by 1, 
         # [0:4] quaternion
         # [4:7] gyro bias
-        # [7:12] delta X
+        # [7:13] delta X
     # P_k_1: 18 by 18, covariance matrix
 
+    
     I3 = np.eye(3)
     I4 = np.eye(4)
     I6 = np.eye(6)
@@ -180,7 +219,7 @@ def Attitude_MEKF(dt, acc_meas, gyro_meas, mag_meas, sigma_acc, sigma_ARW, sigma
     # Propagated value from previous step
     q_k = x_k_1[0:4]
     beta_k = x_k_1[4:7]
-    delta_x_k = x_k_1[7:12]
+    delta_x_k = x_k_1[7:13]
     x_k = np.zeros(12)
 
     # Predition
@@ -188,16 +227,36 @@ def Attitude_MEKF(dt, acc_meas, gyro_meas, mag_meas, sigma_acc, sigma_ARW, sigma
     omega_k = gyro_meas - beta_k
 
     # Quaternion propagation
-    omegax_k = skew_symmetric(omega_k)
-    Omega_k = np.block([[- omegax_k, omega_k], [-omega_k.transpose(), 0]])
+    Omega_k = np.array([[0, -omega_k[2], omega_k[1], omega_k[0]],
+            [omega_k[2], 0, -omega_k[0], omega_k[1]],
+            [-omega_k[1], omega_k[0], 0, omega_k[2]],
+            [-omega_k[0], -omega_k[1], -omega_k[2], 0]])
     q_k = np.dot(I4 + 0.5*dt*Omega_k, q_k)
     q_k = q_k/np.linalg.norm(q_k)
 
     # Covariance equation propagation
-    F = np.block([[I3, -I3*dt], [O3, I3]])
-    G = np.block([[-I3, O3], [O3, I3]])
-    Q = np.array([[(sigma_ARW**2*dt + 1/3 * sigma_RRW**2*dt**3)*I3, -(0.5*sigma_RRW**2*dt**2)*I3],
-                  [-0.5*sigma_RRW**2*dt**2*I3, sigma_RRW**2*dt*I3]])
+    F = np.array([[1,0,0,-dt,0,0],
+                  [0,1,0,0,-dt,0],
+                  [0,0,1,0,0,-dt],
+                  [0,0,0,1,0,0],
+                  [0,0,0,0,1,0],
+                  [0,0,0,0,0,1]])
+    G = np.array([[-1,0,0,0,0,0],
+                    [0,-1,0,0,0,0],
+                    [0,0,-1,0,0,0],
+                    [0,0,0,1,0,0],
+                    [0,0,0,0,1,0],
+                    [0,0,0,0,0,1]])
+    
+    q_Q1=sigma_ARW**2*dt + 1/3 * sigma_RRW**2*dt**3
+    q_Q2=-0.5*sigma_RRW**2*dt**2
+    q_Q3=sigma_RRW**2*dt
+    Q = np.array([[q_Q1,0,0,q_Q2,0,0],
+                  [0,q_Q1,0,0,q_Q2,0],
+                  [0,0,q_Q1,0,0,q_Q2],
+                  [q_Q2,0,0,q_Q3,0,0],
+                  [0,q_Q2,0,0,q_Q3,0],
+                  [0,0,q_Q2,0,0,q_Q3]])
     P_k = np.dot(np.dot(F, P_k_1), F.transpose()) + np.dot(np.dot(G, Q), G.transpose())
 
     # Update
@@ -221,10 +280,12 @@ def Attitude_MEKF(dt, acc_meas, gyro_meas, mag_meas, sigma_acc, sigma_ARW, sigma
             R = sigma_mag**2 * I3
 
         # Sensitivity matrix
-        Aq_rx = skew_symmetric(Aq_r)
-        H = np.block([Aq_rx, O3])
+        H = np.array([[0, -Aq_r[2], Aq_r[1], 0, 0, 0],
+            [Aq_r[2], 0, -Aq_r[0], 0, 0, 0],
+            [-Aq_r[1], Aq_r[0], 0, 0, 0, 0]])
 
         # Kalman gain
+        print(np.dot(np.dot(H, P_k), H.transpose()))
         K = np.dot(np.dot(P_k, H.transpose()), np.linalg.inv(np.dot(np.dot(H, P_k), H.transpose()) + R))
 
         # Update covariance
@@ -232,21 +293,24 @@ def Attitude_MEKF(dt, acc_meas, gyro_meas, mag_meas, sigma_acc, sigma_ARW, sigma
 
         # Update state
         e_k = b - Aq_r
+        print(H)
+        print(delta_x_k)
+        print(e_k)
         y_k = e_k - np.dot(H, delta_x_k)
         delta_x_k = delta_x_k + np.dot(K, y_k)
 
         # Update quaternion
         drho = 0.5*delta_x_k[0:3]
         q_4 = np.sqrt(1 - np.dot(drho, drho))
-        d_q = np.concatenate((drho, q_4))
-        x_k[0:4] = QuaternionProduct(d_q)
+        d_q = np.array([drho[0],drho[1],drho[2], q_4])
+        x_k[0:4] = QuaternionProduct(q_k,d_q)
 
         # Update gyro bias
         delta_beta = delta_x_k[3:6]
         x_k[4:7] = beta_k + delta_beta
 
         # Update delta X
-        x_k[7:12] = delta_x_k
+        x_k[7:13] = delta_x_k
     
     return x_k, P_k
 
@@ -337,18 +401,36 @@ def Position_EKF(dt, position, velocity,acc_meas, R_BODY2ENU, x_k_1, P_k_1, sigm
     return x_k, P_k
 
 R_BODY2ENU = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
-origin_ECEF = np.array([[0], [0], [0]])
-gps_time_old = gps.timestamp_utc
+origin_ECEF = np.array([0, 0, 0])
 
-latitude = gps.latitude
-longitude = gps.longitude
-altitude = gps.altitude_m + gps.height_geoid # height above ellipsoid = orthometric height + geoid separation
-velocity = gps.speed_kmh / 3.6 # km/h to m/s
+gps.update()
+flag_gps = 0
+while not flag_gps:
+    gps.update()
+    if not gps.has_fix:
+        # Try again if we don't have a fix yet.
+        print("Waiting for fix...")
+        
+        time.sleep(1)
+        continue
+
+    gps_time_old = gps.timestamp_utc.tm_sec
+
+    if (gps.latitude is None) and (gps.longitude is None):
+        continue
+    latitude = gps.latitude
+    longitude = gps.longitude
+
+    if gps.speed_kmh is not None:
+        velocity = gps.speed_kmh / 3.6 # km/h to m/s
+    else:
+        velocity = np.array([0,0,0])
+
+    if (gps.altitude_m is not None) and (gps.height_geoid is not None):
+        altitude = gps.altitude_m + gps.height_geoid # height above ellipsoid = orthometric height + geoid separation
+        flag_gps = 1
+
 position_ENU = GPS2ENU(latitude, longitude, altitude, origin_ECEF)
-sigma_acc = 0.3
-sigma_ARW = 2 * np.pi/180
-sigma_RRW = 3.1 * np.pi/180
-sigma_mag = 1.4e-6
 
 # EKF initialization
 x_k = np.concatenate((position_ENU, velocity), axis=0)
@@ -356,8 +438,10 @@ P_k= 1e-9*np.eye(6)
 
 # MEKF initialization
 Pq_k = 1e-9*np.eye(6)
-q_k = np.array([0, 0, 0, 1])
+q_k = np.zeros(13)
+q_k[3] = 1
 
+'''
 f = open('data.txt', 'w')
 f.write('Time;Latitude;Longitude;Altitude;')
 f.write('Velocity_X;Velocity_Y;Velocity_Z;')
@@ -371,6 +455,7 @@ f.write('Velocity_EKF_E;Velocity_EKF_N;Velocity_EKF_U')
 f.write('q1;q2;q3;q4')
 f.write('\n')
 f.close()
+'''
 
 while True:
 
@@ -440,44 +525,42 @@ while True:
         ## --------------------------------------
         latitude = gps.latitude
         longitude = gps.longitude
-        altitude = gps.altitude_m + gps.height_geoid # height above ellipsoid = orthometric height + geoid separation
-        velocity = gps.speed_kmh / 3.6 # km/h to m/s
+        if gps.altitude_m is not None and gps.height_geoid is not None :
+            altitude = gps.altitude_m + gps.height_geoid # height above ellipsoid = orthometric height + geoid separation
+        if gps.speed_kmh is not None:
+            velocity = gps.speed_kmh / 3.6 # km/h to m/s
+
         position_ENU = GPS2ENU(latitude, longitude, altitude, origin_ECEF)
         print("Position in ENU: ", position_ENU)
 
-    dt = gps.timestamp_utc.tm_sec - gps_time_old
-    if dt < 0:
-        dt += 60
-    print("Time interval: ", dt)
-    gps_time_old = gps.timestamp_utc.tm_sec
+        dt = gps.timestamp_utc.tm_sec - gps_time_old
+        if dt < 0:
+            dt += 60
+        print("Time interval: ", dt)
+        gps_time_old = gps.timestamp_utc.tm_sec
 
-        
-    ## --------------------------------------
-    ##  R E A D   I M U
-    ## --------------------------------------
-    print("Acceleration:")
-    accel_x, accel_y, accel_z = bno.acceleration  # pylint:disable=no-member
-    print("X: %0.6f  Y: %0.6f Z: %0.6f  m/s^2" % (accel_x, accel_y, accel_z))
-    print("")
 
-    print("Gyro:")
-    gyro_x, gyro_y, gyro_z = bno.gyro  # pylint:disable=no-member
-    print("X: %0.6f  Y: %0.6f Z: %0.6f rads/s" % (gyro_x, gyro_y, gyro_z))
-    print("")
+        ## --------------------------------------
+        ##  R E A D   I M U
+        ## --------------------------------------
+        accel_x, accel_y, accel_z = bno.acceleration  # pylint:disable=no-member
+        gyro_x, gyro_y, gyro_z = bno.gyro  # pylint:disable=no-member
+        mag_x, mag_y, mag_z = bno.magnetic  # pylint:disable=no-member
+        print("X: %0.6f  Y: %0.6f Z: %0.6f  m/s^2 || X: %0.6f  Y: %0.6f Z: %0.6f rads/s || X: %0.6f  Y: %0.6f Z: %0.6f uT " % (accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z, mag_x, mag_y, mag_z))
+        print("")
 
-    print("Magnetometer:")
-    mag_x, mag_y, mag_z = bno.magnetic  # pylint:disable=no-member
-    print("X: %0.6f  Y: %0.6f Z: %0.6f uT" % (mag_x, mag_y, mag_z))
-    print("")
-    
-    q_k, Pq_k = Attitude_MEKF(dt, np.array([accel_x,accel_y,accel_z]), np.array([gyro_x,gyro_y,gyro_z]), np.array([mag_x,mag_y,mag_z]), sigma_acc, sigma_ARW, sigma_RRW, sigma_mag ,q_k, Pq_k)
-    
-    # R_BODY2ENU = Quaternion2Rotation(q_k)
+        q_k, Pq_k = Attitude_MEKF(dt, np.array([accel_x,accel_y,accel_z]), np.array([gyro_x,gyro_y,gyro_z]), np.array([mag_x,mag_y,mag_z]), sigma_acc, sigma_ARW, sigma_RRW, sigma_mag ,q_k, Pq_k)
+        print("Quaternion in MEKF: ", q_k)
+        print("Rotation matrix in MEKF: ", Quaternion2Rotation(q_k))
+        # R_BODY2ENU = Quaternion2Rotation(q_k)
 
-    x_k, P_k = Position_EKF(dt, position_ENU, velocity, np.array([accel_x,accel_y,accel_z]) , R_BODY2ENU, x_k, P_k, sigma_acc, gps.hdop, gps.vdop)
-    
-    f = open('data.txt', 'a')
-    f.write(str(gps_time_old)+';')
+        x_k, P_k = Position_EKF(dt, position_ENU, velocity, np.array([accel_x,accel_y,accel_z]) , R_BODY2ENU, x_k, P_k, sigma_acc, gps.hdop, gps.vdop)
+
+        print("Position in EKF: ", x_k[0:3])
+        print("Velocity in EKF: ", x_k[3:6])
+        '''
+        f = open('data.txt', 'a')
+        f.write(str(gps_time_old)+';')
     f.write(str(latitude)+';')
     f.write(str(longitude)+';')
     f.write(str(altitude)+';')
@@ -510,3 +593,4 @@ while True:
     f.write(str(q_k[3])+';')
     f.write('\n')
     f.close()
+    '''
