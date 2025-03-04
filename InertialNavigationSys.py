@@ -220,7 +220,7 @@ def Attitude_MEKF(dt, acc_meas, gyro_meas, mag_meas, sigma_acc, sigma_ARW, sigma
     q_k = x_k_1[0:4]
     beta_k = x_k_1[4:7]
     delta_x_k = x_k_1[7:13]
-    x_k = np.zeros(12)
+    x_k = np.zeros(13)
 
     # Predition
     # Depolarize bias from gyroscope
@@ -293,9 +293,6 @@ def Attitude_MEKF(dt, acc_meas, gyro_meas, mag_meas, sigma_acc, sigma_ARW, sigma
 
         # Update state
         e_k = b - Aq_r
-        print(H)
-        print(delta_x_k)
-        print(e_k)
         y_k = e_k - np.dot(H, delta_x_k)
         delta_x_k = delta_x_k + np.dot(K, y_k)
 
@@ -386,15 +383,15 @@ def Position_EKF(dt, position, velocity,acc_meas, R_BODY2ENU, x_k_1, P_k_1, sigm
     
     Q = np.diag([sigma_acc**2, sigma_acc**2, sigma_acc**2]) 
     R = np.diag([hdop**2, hdop**2, vdot**2, 0.1**2, 0.1**2, 0.1**2]) # 0.1 is the standard deviation of the velocity
-    V = np.dot(np.dot(B, Q), np.transpose(B))
+    V = np.dot(np.dot(B, Q), B.transpose())
 
     ## Prediction
     x_k = np.dot(F, x_k_1) + np.dot(B, acc_meas)
-    P_k = np.dot(np.dot(F, P_k_1), np.transpose(F)) + V
+    P_k = np.dot(np.dot(F, P_k_1), F.transpose()) + V
 
     ## Update
     H = np.eye(6)
-    K = np.dot(np.dot(P_k, np.transpose(H)), np.linalg.inv(np.dot(np.dot(H, P_k), np.transpose(H)) + R))
+    K = np.dot(np.dot(P_k, H.transpose()), np.linalg.inv(np.dot(np.dot(H, P_k), H.transpose()) + R))
     x_k = x_k + np.dot(K, (measurements - np.dot(H, x_k)))
     P_k = np.dot((np.eye(6) - np.dot(K, H)), P_k)
 
@@ -543,18 +540,34 @@ while True:
         ## --------------------------------------
         ##  R E A D   I M U
         ## --------------------------------------
-        accel_x, accel_y, accel_z = bno.acceleration  # pylint:disable=no-member
-        gyro_x, gyro_y, gyro_z = bno.gyro  # pylint:disable=no-member
-        mag_x, mag_y, mag_z = bno.magnetic  # pylint:disable=no-member
+        try: 
+            accel_x, accel_y, accel_z = bno.acceleration  # pylint:disable=no-member
+            gyro_x, gyro_y, gyro_z = bno.gyro  # pylint:disable=no-member
+            mag_x, mag_y, mag_z = bno.magnetic  # pylint:disable=no-member
+        except:
+            time.sleep(0.05)
         print("X: %0.6f  Y: %0.6f Z: %0.6f  m/s^2 || X: %0.6f  Y: %0.6f Z: %0.6f rads/s || X: %0.6f  Y: %0.6f Z: %0.6f uT " % (accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z, mag_x, mag_y, mag_z))
         print("")
 
         q_k, Pq_k = Attitude_MEKF(dt, np.array([accel_x,accel_y,accel_z]), np.array([gyro_x,gyro_y,gyro_z]), np.array([mag_x,mag_y,mag_z]), sigma_acc, sigma_ARW, sigma_RRW, sigma_mag ,q_k, Pq_k)
-        print("Quaternion in MEKF: ", q_k)
-        print("Rotation matrix in MEKF: ", Quaternion2Rotation(q_k))
+        print("Quaternion in MEKF: ", q_k[0:4])
+
+        print("Rotation matrix in MEKF: ", Quaternion2Rotation(q_k[0:4]))
         # R_BODY2ENU = Quaternion2Rotation(q_k)
 
-        x_k, P_k = Position_EKF(dt, position_ENU, velocity, np.array([accel_x,accel_y,accel_z]) , R_BODY2ENU, x_k, P_k, sigma_acc, gps.hdop, gps.vdop)
+        if (gps.hdop is None) or (gps.vdop is None):
+            if gps.pdop is not None:
+                hdop = gps.pdop
+                vdop = gps.pdop
+            else:
+                hdop = 3
+                vdop = 3
+        else:
+            hdop = gps.hdop
+            vdop = gps.vdop
+
+
+        x_k, P_k = Position_EKF(dt, position_ENU, velocity, np.array([accel_x,accel_y,accel_z]) , R_BODY2ENU, x_k, P_k, sigma_acc, hdop, vdop)
 
         print("Position in EKF: ", x_k[0:3])
         print("Velocity in EKF: ", x_k[3:6])
