@@ -89,9 +89,9 @@ gps = adafruit_gps.GPS(uart, debug=False)  # Use UART/pyserial
 #   https://cdn-shop.adafruit.com/datasheets/PMTK_A11.pdf
 
 # Turn on the basic GGA and RMC info (what you typically want)
-gps.send_command(b"PMTK314,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0")
+#gps.send_command(b"PMTK314,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0")
 # Turn on the basic GGA and RMC info + VTG for speed in km/h
-# gps.send_command(b"PMTK314,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0")
+gps.send_command(b"PMTK314,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0")
 # Turn on just minimum info (RMC only, location):
 # gps.send_command(b'PMTK314,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0')
 # Turn off everything:
@@ -419,6 +419,8 @@ while not flag_gps:
     longitude = gps.longitude
 
     if gps.speed_kmh is not None:
+        # EKF initialization
+        ## TO DO: GET velocoty from velocity and tracking error ###
         velocity = gps.speed_kmh / 3.6 # km/h to m/s
     else:
         velocity = np.array([0,0,0])
@@ -429,7 +431,6 @@ while not flag_gps:
 
 position_ENU = GPS2ENU(latitude, longitude, altitude, origin_ECEF)
 
-# EKF initialization
 x_k = np.concatenate((position_ENU, velocity), axis=0)
 P_k= 1e-9*np.eye(6)
 
