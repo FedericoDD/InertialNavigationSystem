@@ -285,7 +285,6 @@ def Attitude_MEKF(dt, acc_meas, gyro_meas, mag_meas, sigma_acc, sigma_ARW, sigma
             [-Aq_r[1], Aq_r[0], 0, 0, 0, 0]])
 
         # Kalman gain
-        print(np.dot(np.dot(H, P_k), H.transpose()))
         K = np.dot(np.dot(P_k, H.transpose()), np.linalg.inv(np.dot(np.dot(H, P_k), H.transpose()) + R))
 
         # Update covariance
