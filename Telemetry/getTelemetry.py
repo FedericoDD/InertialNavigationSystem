@@ -1,12 +1,15 @@
 import time
 import serial
 SERIAL_PORT = 'COM4'
+FILE_NAME = 'telemetry.csv'
+
+
 ser = serial.Serial(SERIAL_PORT, 115200)  # open serial port
 
 command = b'\r'
 print(f"Start communication")
 
-f = open('data.txt', 'w')
+f = open(FILE_NAME, 'w')
 f.write('dTime;')
 f.write('Accel_X;Accel_Y;Accel_Z;')
 f.write('Gyro_X;Gyro_Y;Gyro_Z;')
@@ -46,7 +49,7 @@ while True:
 
             #time.sleep(0.01)
         
-        f = open('data.txt', 'a')
+        f = open(FILE_NAME, 'a')
         try: 
             #print(reply.decode('utf'))
             f.write(reply.decode('utf'))

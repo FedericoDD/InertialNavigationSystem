@@ -7,6 +7,7 @@ import board
 import busio
 
 ################ I M U : START ###########################
+
 import adafruit_bno08x
 from adafruit_bno08x.uart import BNO08X_UART
 from adafruit_bno08x import (
@@ -25,6 +26,7 @@ bno.enable_feature(BNO_REPORT_ACCELEROMETER)
 bno.enable_feature(BNO_REPORT_GYROSCOPE)
 bno.enable_feature(BNO_REPORT_MAGNETOMETER)
 bno.enable_feature(BNO_REPORT_ROTATION_VECTOR)
+
 ################ I M U : END ###########################
 
 ################ G N S S : START ###########################
@@ -58,9 +60,9 @@ gps.send_command(b"PMTK220,1000")
 t_0 = time.monotonic()
 last_print = t_0
 while True:
-    accel_x, accel_y, accel_z = bno.acceleration  # pylint:disable=no-member
-    gyro_x, gyro_y, gyro_z = bno.gyro  # pylint:disable=no-member
-    mag_x, mag_y, mag_z = bno.magnetic  # pylint:disable=no-member
+    accel_x, accel_y, accel_z = bno.raw_acceleration  # pylint:disable=no-member
+    gyro_x, gyro_y, gyro_z = bno.raw_gyro  # pylint:disable=no-member
+    mag_x, mag_y, mag_z = bno.raw_magnetic  # pylint:disable=no-member
     quat_i, quat_j, quat_k, quat_real = bno.quaternion  # pylint:disable=no-member
     
     gps.update()
