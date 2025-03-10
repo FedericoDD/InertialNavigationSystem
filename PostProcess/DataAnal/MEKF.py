@@ -154,7 +154,7 @@ def MEKF(dt, acc_meas, gyro_meas, mag_meas, sigma_acc_ARW, sigma_acc_RRW, sigma_
     q_k = q_k/np.linalg.norm(q_k)
 
     # Covariance equation propagation
-    R_k = Quaternion2Rotation(q_k).transpose()
+    R_k = Quaternion2Rotation(q_k)
     G = np.zeros((18,18))
     G[0:3,9:12] = -I3
     G[6:9,3:6] = I3
