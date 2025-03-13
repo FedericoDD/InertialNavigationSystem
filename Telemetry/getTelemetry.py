@@ -9,6 +9,7 @@ ser = serial.Serial(SERIAL_PORT, 115200)  # open serial port
 command = b'\r'
 print(f"Start communication")
 
+# Create file
 f = open(FILE_NAME, 'w')
 f.write('dTime;')
 f.write('Accel_X;Accel_Y;Accel_Z;')
