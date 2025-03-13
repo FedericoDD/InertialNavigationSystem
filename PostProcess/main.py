@@ -22,8 +22,8 @@ x_k[0:4] = data.iloc[0, 10:14].values
 p_0=1e-12
 P_k = np.eye(18)*p_0
 
-sigma_acc_ARW = 1
-sigma_acc_RRW = 0.01
+sigma_acc_ARW = 0.2
+sigma_acc_RRW = 1e-11
 sigma_acc = 0.2
 sigma_ARW = 0.9 * np.pi / 180 / 3600  # rad/s
 sigma_RRW = 0.08 * np.pi / 180 / 3600  # rad/sqrt(s)
@@ -85,8 +85,8 @@ for i in range(1, len(data)):
     velocities_ENU[i, :] = ekf.getSpeed(speed_kmh, track_angle)
 
     R_NB = mekf.Quaternion2Rotation(x_k[0:4])
-    acc_meas = np.dot(R_NB, data.iloc[i, 1:4].values - acc_bias) 
-    acc_vec[i, :] = acc_meas
+    acc_meas = np.dot(R_NB, data.iloc[i, 1:4].values - acc_bias - x_k[12:15]) 
+    acc_vec[i, :] = acc_meas 
     x_EKF_k, P_EKF_k = ekf.EKF(dt,lat ,lon,alt,origin,speed_kmh, track_angle, acc_meas,  x_EKF_k, P_EKF_k, sigma_acc, hdop, vdot)
 
     # get integrated velocity and position
@@ -97,18 +97,28 @@ for i in range(1, len(data)):
     x_vect_EKF[i, :] = x_EKF_k[0:3]
     v_vect_EKF[i,:] = x_EKF_k[3:6]
 
+# plot acc_vec
+plt.figure()
+plt.subplot(3, 1, 1)
+plt.plot(data.iloc[:, 0], acc_vec[:, 0], label='x')
+plt.subplot(3, 1, 2)
+plt.plot(data.iloc[:, 0], acc_vec[:, 1], label='y')
+plt.subplot(3, 1, 3)
+plt.plot(data.iloc[:, 0], acc_vec[:, 2], label='z')
+plt.show()
+
 # plot velocities
 plt.figure()
 plt.subplot(3, 1, 1)
-plt.plot(data.iloc[:, 0], velocities_ENU[:, 0], label='N')
 plt.plot(data.iloc[:, 0], integrated_vel[:, 0], label='N_int')
+plt.plot(data.iloc[:, 0], velocities_ENU[:, 0], label='N')
 plt.plot(data.iloc[:, 0], v_vect_EKF[:,0], label='N')
 plt.grid()
 plt.minorticks_on()
 plt.grid(which='minor', linestyle=':', linewidth='0.5', color='black')
 plt.subplot(3, 1, 2)
-plt.plot(data.iloc[:, 0], velocities_ENU[:, 1], label='E')
 plt.plot(data.iloc[:, 0], integrated_vel[:, 1], label='E_int')
+plt.plot(data.iloc[:, 0], velocities_ENU[:, 1], label='E')
 plt.plot(data.iloc[:, 0], v_vect_EKF[:,1], label='N')
 plt.grid()
 plt.minorticks_on()
@@ -122,18 +132,6 @@ plt.minorticks_on()
 plt.grid(which='minor', linestyle=':', linewidth='0.5', color='black')
 plt.legend(['Integrator','ENU','EKF'])
 plt.show()
-
-'''
-# plot acc_vec
-plt.figure()
-plt.subplot(3, 1, 1)
-plt.plot(data.iloc[:, 0], acc_vec[:, 0], label='x')
-plt.subplot(3, 1, 2)
-plt.plot(data.iloc[:, 0], acc_vec[:, 1], label='y')
-plt.subplot(3, 1, 3)
-plt.plot(data.iloc[:, 0], acc_vec[:, 2], label='z')
-plt.show()
-'''
 
 # plot result
 plt.figure()

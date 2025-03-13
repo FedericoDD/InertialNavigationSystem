@@ -10,22 +10,22 @@ FILE_PATH = 'PostProcess' + os.sep + 'Data' + os.sep
 FILE_NAME = FILE_PATH + 'data_archi' +'.csv'
 
 data = pp.import_data(FILE_NAME)
-pp.plot_all(data)
+#pp.plot_all(data)
 
 
 # MEKF
 # Initial state
 x_k = np.zeros(18)
 x_k[0:4] = data.iloc[0, 10:14].values
-p_0=1e-12
+p_0=1e-9
 P_k = np.eye(18)*p_0
 
-sigma_acc_ARW = 1
-sigma_acc_RRW = 0.01
-sigma_acc = 0.5
-sigma_ARW = 0.9 * np.pi / 180 / 3600  # rad/s
-sigma_RRW = 0.08 * np.pi / 180 / 3600  # rad/sqrt(s)
-sigma_mag = 1e4
+sigma_acc_ARW = 10
+sigma_acc_RRW = 1e-6
+sigma_acc = 10
+sigma_ARW = 10 * np.pi / 180 / 3600  # rad/s
+sigma_RRW = 0.00001 * np.pi / 180 / np.sqrt(3600)  # rad/sqrt(s)
+sigma_mag = 1
 
 q_vec = np.zeros((len(data),4))
 q_vec[0, :] = x_k[0:4]

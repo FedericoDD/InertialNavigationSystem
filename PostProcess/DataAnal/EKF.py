@@ -118,7 +118,7 @@ def EKF(dt,lat,lon,alt,origin,speed_kmh, track_angle, acc_meas,  x_k_1, P_k_1, s
                 [0, 0, dt]])
     
     Q = np.diag([sigma_acc**2, sigma_acc**2, sigma_acc**2]) 
-    R = np.diag([hdop**2, hdop**2, vdot**2, 0.1**2, 0.1**2, 0.1**2]) # 0.1 is the standard deviation of the velocity
+    R = np.diag([hdop**2, hdop**2, vdot**2, 0.15**2, 0.15**2, 0.15**2]) # 0.1 is the standard deviation of the velocity
     V = np.dot(np.dot(B, Q), B.transpose())
 
     ## Prediction
