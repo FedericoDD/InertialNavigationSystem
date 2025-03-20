@@ -56,35 +56,78 @@ gps.send_command(b"PMTK314,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0")
 gps.send_command(b"PMTK220,1000")
 
 ################ G N S S : END ###########################
+# Initialize variables for GNSS
+gps.update()
+if gps.has_fix:
+    longitude = gps.longitude_degrees
+    latitude = gps.longitude_minutes
+    altitude = gps.altitude_m + gps.height_geoid
+    velocity = gps.speed_kmh
+    trackangle = gps.track_angle_deg
+else:
+    # Try again if we don't have a fix yet.
+    longitude = float('NaN')
+    latitude = float('NaN')
+    altitude = float('NaN')
+    velocity = float('NaN')
+    trackangle = float('NaN')
 
 t_0 = time.monotonic()
 last_print = t_0
 while True:
-    accel_x, accel_y, accel_z = bno.raw_acceleration  # pylint:disable=no-member
-    gyro_x, gyro_y, gyro_z = bno.raw_gyro  # pylint:disable=no-member
-    mag_x, mag_y, mag_z = bno.raw_magnetic  # pylint:disable=no-member
+    time.sleep(0.01)
+    accel_x, accel_y, accel_z = bno.acceleration  # pylint:disable=no-member
+    gyro_x, gyro_y, gyro_z = bno.gyro  # pylint:disable=no-member
+    mag_x, mag_y, mag_z = bno.magnetic  # pylint:disable=no-member
     quat_i, quat_j, quat_k, quat_real = bno.quaternion  # pylint:disable=no-member
     
-    gps.update()
     # Every second print out current location details if there's a fix.
+    '''
     current = time.monotonic()
-    if current - last_print >= 1.0:
+    if current - last_print >= 5.0:
+        time.sleep(0.1)
+        gps.update()
         last_print = current
-        if not gps.has_fix:
+        if gps.has_fix:
+            longitude = gps.longitude_degrees
+            latitude = gps.longitude_minutes
+            altitude = gps.altitude_m + gps.height_geoid
+            if gps.speed_kmh is not None:
+                velocity = gps.speed_knots
+                trackangle = gps.track_angle_deg
+            else:
+                velocity = float('NaN')
+                trackangle = float('NaN')
+            
+        else:
             # Try again if we don't have a fix yet.
             longitude = float('NaN')
             latitude = float('NaN')
             altitude = float('NaN')
             velocity = float('NaN')
             trackangle = float('NaN')
-            continue
-        
-        longitude = gps.longitude_degrees
-        latitude = gps.longitude_minutes
-        altitude = gps.altitude_m + gps.height_geoid
-        velocity = gps.speed_kmh
-        trackangle = gps.track_angle_deg
         last_print = current
+    '''
+    time.sleep(0.01)
+    gps.update()
+    if gps.has_fix:
+        latitude = gps.latitude_degrees
+        longitude = gps.longitude_degrees
+        altitude = gps.altitude_m + gps.height_geoid
+        if gps.speed_kmh is not None:
+            velocity = gps.speed_knots
+            trackangle = gps.track_angle_deg
+        else:
+            velocity = float('NaN')
+            trackangle = float('NaN')
+        
+    else:
+        # Try again if we don't have a fix yet.
+        longitude = float('NaN')
+        latitude = float('NaN')
+        altitude = float('NaN')
+        velocity = float('NaN')
+        trackangle = float('NaN')
 
     dt=time.monotonic()-t_0
     print(f"{dt:.6f};{accel_x:.6f};{accel_y:.6f};{accel_z:.6f};{gyro_x:.6f};{gyro_y:.6f};{gyro_z:.6f};{mag_x:.6f};{mag_y:.6f};{mag_z:.6f};{quat_i:.6f};{quat_j:.6f};{quat_k:.6f};{quat_real:.6f};{latitude:.6f};{longitude:.6f};{altitude:.6f};{velocity:.6f};{trackangle:.6f}\r")
