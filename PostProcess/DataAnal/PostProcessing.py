@@ -1,7 +1,10 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from . import MEKF as mekf
+if __name__ == '__main__':
+    import MEKF as mekf
+else:
+    from . import MEKF as mekf
 
 
 # Function to import data from data.csv
@@ -71,8 +74,8 @@ def plot_all(data):
 if __name__ == '__main__':
     import os
     FILE_PATH = 'PostProcess' + os.sep + 'Data' + os.sep
-    FILE_NAME = FILE_PATH + 'data_20250307.csv'
+    FILE_NAME = FILE_PATH + 'data_rettangoli' + '.csv'
     data = import_data(FILE_NAME)
     plt.figure()
-    plot_acc(data)
+    plot_all(data)
     plt.show()

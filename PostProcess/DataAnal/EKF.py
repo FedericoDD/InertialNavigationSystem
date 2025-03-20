@@ -38,11 +38,11 @@ def GPS2ECEF(*argv):
         R_ECEF2ENU = np.eye(3)
 
     if len(argv) > 4:
-        a, rf = argv[4]
+        a, b = argv[4]
     else:
-        a, rf = 6378137, 298.257223563
+        a, b = 6378137, 6356752
     
-    e2 = 1 - (1 - 1 / rf) ** 2           # squared eccentricity
+    e2 = 1 - (b/a) ** 2           # squared eccentricity
     n = a / np.sqrt(1 - e2 * sin_lat ** 2)  # prime vertical radius
     r = (n + altitude) * cos_lat         # perpendicular distance in z axis
     x = r * cos_lon

@@ -7,7 +7,7 @@ import DataAnal.MEKF as mekf
 import DataAnal.EKF as ekf
 
 FILE_PATH = 'PostProcess' + os.sep + 'Data' + os.sep
-FILE_NAME = FILE_PATH + 'data_archi' +'.csv'
+FILE_NAME = FILE_PATH + 'data_random' +'.csv'
 
 data = pp.import_data(FILE_NAME)
 #pp.plot_all(data)
@@ -17,14 +17,21 @@ data = pp.import_data(FILE_NAME)
 # Initial state
 x_k = np.zeros(18)
 x_k[0:4] = data.iloc[0, 10:14].values
-p_0=1e-9
+p_0 = 1e-9
 P_k = np.eye(18)*p_0
 
-sigma_acc_ARW = 10
-sigma_acc_RRW = 1e-6
-sigma_acc = 10
-sigma_ARW = 10 * np.pi / 180 / 3600  # rad/s
-sigma_RRW = 0.00001 * np.pi / 180 / np.sqrt(3600)  # rad/sqrt(s)
+# sigma_acc_VRW = 10
+# sigma_acc_RRW = 1
+# sigma_acc = 10
+# sigma_ARW = 10 * np.pi / 180 / 3600  # rad/s
+# sigma_RRW = 0.00001 * np.pi / 180 / np.sqrt(3600)  # rad/sqrt(s)
+# sigma_mag = 1e3
+
+sigma_acc_VRW = 4
+sigma_acc_RRW = 1e-5
+sigma_acc = 4
+sigma_ARW = 1  # rad/s
+sigma_RRW = 4e-5  # rad/sqrt(s)
 sigma_mag = 1
 
 q_vec = np.zeros((len(data),4))
@@ -32,7 +39,8 @@ q_vec[0, :] = x_k[0:4]
 x_vect = np.zeros((len(data),3))
 x_vect[0, :] = np.zeros(3,)
 vel = np.zeros(3,)
-acc_bias = np.array([0,0,np.linalg.norm(data.iloc[1,1:4])])
+acc_bias = np.array([0,0,np.linalg.norm(data.iloc[1,1:4].values)])
+
 for i in range(1, len(data)):
     R = mekf.Quaternion2Rotation(x_k[0:4])
     dt = data.iloc[i, 0] - data.iloc[i-1, 0]
@@ -43,11 +51,12 @@ for i in range(1, len(data)):
     x_k = x_k
     P_k = P_k
 
-    x_k, P_k = mekf.MEKF(dt, acc_meas, gyro_meas, mag_meas, sigma_acc_ARW, sigma_acc_RRW, sigma_ARW, sigma_RRW, sigma_mag, x_k, P_k)
+    x_k, P_k = mekf.MEKF(dt, acc_meas, gyro_meas, mag_meas, sigma_acc_VRW, sigma_acc_RRW, sigma_ARW, sigma_RRW, sigma_mag, x_k, P_k)
     
     # save x_k to data
     q_vec[i, :] = x_k[0:4]
-    acc_clean = acc_meas - np.dot(R.transpose(), acc_bias)
+    acc_clean = np.dot(R,acc_meas) -  acc_bias
+
     x_vect[i, :] =  x_vect[i-1, :] + acc_clean*dt**2
 
 
