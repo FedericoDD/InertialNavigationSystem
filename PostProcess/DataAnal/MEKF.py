@@ -189,6 +189,7 @@ def MEKF(dt, acc_meas, gyro_meas, mag_meas, sigma_acc_ARW, sigma_acc_RRW, sigma_
     R = np.identity(6)
     R[0:3, 0:3] = sigma_acc_ARW * np.identity(3)
     R[3:6, 3:6] = sigma_mag * np.identity(3)
+
     # Kalman gain
     K = np.dot(np.dot(P_k, H.transpose()), np.linalg.inv(np.dot(H, np.dot(P_k, H.transpose())) + R))
     
@@ -205,12 +206,13 @@ def MEKF(dt, acc_meas, gyro_meas, mag_meas, sigma_acc_ARW, sigma_acc_RRW, sigma_
 
     # Update x_k
     drho = 0.5*x_k[0:3]
+    
     q_4 = np.sqrt(1 - np.dot(drho, drho))
     d_q = np.array([drho[0],drho[1],drho[2], q_4])
     x_k[0:4] = QuaternionProduct(q_k,d_q)
     x_k[9:12] = beta_gyro_k + x_k[9:12]
-    x_k_1[12:15] = beta_acc_k + x_k[12:15]
-    x_k_1[15:18] = beta_mag_k + x_k[15:18]
+    x_k[12:15] = beta_acc_k + x_k[12:15]
+    x_k[15:18] = beta_mag_k + x_k[15:18]
 
     
     return x_k, P_k
