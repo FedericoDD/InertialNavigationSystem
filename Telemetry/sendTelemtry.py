@@ -75,47 +75,20 @@ else:
 t_0 = time.monotonic()
 last_print = t_0
 while True:
-    time.sleep(0.01)
+    time.sleep(0.001)
     accel_x, accel_y, accel_z = bno.acceleration  # pylint:disable=no-member
     gyro_x, gyro_y, gyro_z = bno.gyro  # pylint:disable=no-member
     mag_x, mag_y, mag_z = bno.magnetic  # pylint:disable=no-member
     quat_i, quat_j, quat_k, quat_real = bno.quaternion  # pylint:disable=no-member
     
-    # Every second print out current location details if there's a fix.
-    '''
-    current = time.monotonic()
-    if current - last_print >= 5.0:
-        time.sleep(0.1)
-        gps.update()
-        last_print = current
-        if gps.has_fix:
-            longitude = gps.longitude_degrees
-            latitude = gps.longitude_minutes
-            altitude = gps.altitude_m + gps.height_geoid
-            if gps.speed_kmh is not None:
-                velocity = gps.speed_knots
-                trackangle = gps.track_angle_deg
-            else:
-                velocity = float('NaN')
-                trackangle = float('NaN')
-            
-        else:
-            # Try again if we don't have a fix yet.
-            longitude = float('NaN')
-            latitude = float('NaN')
-            altitude = float('NaN')
-            velocity = float('NaN')
-            trackangle = float('NaN')
-        last_print = current
-    '''
-    time.sleep(0.01)
+    time.sleep(0.001)
     gps.update()
     if gps.has_fix:
-        latitude = gps.latitude_degrees
-        longitude = gps.longitude_degrees
+        latitude = gps.latitude
+        longitude = gps.longitude
         altitude = gps.altitude_m + gps.height_geoid
         if gps.speed_kmh is not None:
-            velocity = gps.speed_knots
+            velocity = gps.speed_kmh
             trackangle = gps.track_angle_deg
         else:
             velocity = float('NaN')
