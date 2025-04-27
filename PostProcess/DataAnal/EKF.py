@@ -67,6 +67,7 @@ def GPS2ENU(latitude, longitude, altitude, origin_ECEF):
     # altitude in meter, obtained by GPS
     # origin_ECEF is the origin of ENU in ECEF frame
 
+    # TODO: R_ECEF2ENU should have been build from the latitude and longitude of the origin.
     point_ECEF, R_ECEF2ENU = GPS2ECEF(latitude, longitude, altitude)
     position_ENU = ECEF2ENU(origin_ECEF, point_ECEF, R_ECEF2ENU)
     # 3 by 1, North, East, Down
@@ -80,7 +81,7 @@ def getSpeed(speed, track_angle):
     track_angle_rad = track_angle*np.pi/180 # degree to radian
     return np.array([speed*np.sin(track_angle_rad), speed*np.cos(track_angle_rad), 0])
 
-def EKF(dt,lat,lon,alt,origin,speed_kmh, track_angle, acc_meas,  x_k_1, P_k_1, sigma_acc, hdop, vdot):
+def EKF(dt,lat,lon,alt,origin,speed_kmh, track_angle, acc_meas,  x_k_1, P_k_1, sigma_acc, hdop, vdop):
     # dt: time interval (use gnss time)
     # position: 3 by 1, East, North, Up from GPS
     # velocity: 3 by 1, East, North, Up from GPS
@@ -90,11 +91,11 @@ def EKF(dt,lat,lon,alt,origin,speed_kmh, track_angle, acc_meas,  x_k_1, P_k_1, s
     # P_k: 6 by 6, covariance matrix
     # sigma_acc: 1 by 1, standard deviation of accelerometer
     # hdop: 1 by 1, horizontal dilution of precision
-    # vdot: 1 by 1, vertical dilution of precision
+    # vdop: 1 by 1, vertical dilution of precision
 
 
     # Q: 6 by 6, process noise covariance matrix diag(sigma_acc)^2
-    # R: 6 by 6, measurement noise covariance matrix diag(hdop^2, hdop^2, vdot^2,2*hdop^2/dt, 2*hdop^2/dt^2, 2*vdot^2/dt^2)
+    # R: 6 by 6, measurement noise covariance matrix diag(hdop^2, hdop^2, vdop^2,2*hdop^2/dt, 2*hdop^2/dt^2, 2*vdop^2/dt^2)
 
     # From latitude and longitude to ENU
     position = GPS2ENU(lat, lon, alt, origin)
@@ -118,7 +119,7 @@ def EKF(dt,lat,lon,alt,origin,speed_kmh, track_angle, acc_meas,  x_k_1, P_k_1, s
                 [0, 0, dt]])
     
     Q = np.diag([sigma_acc**2, sigma_acc**2, sigma_acc**2]) 
-    R = np.diag([hdop**2, hdop**2, vdot**2, 0.15**2, 0.15**2, 0.15**2]) # 0.1 is the standard deviation of the velocity
+    R = np.diag([hdop**2, hdop**2, vdop**2, 0.15**2, 0.15**2, 0.15**2]) # 0.1 is the standard deviation of the velocity
     V = np.dot(np.dot(B, Q), B.transpose())
 
     ## Prediction
